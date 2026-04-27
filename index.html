@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Coach Tracker - Live Ranking</title>
+    <style>
+        /* Variabili Tema (Stile Slate/Orange) */
+        :root {
+            --bg-base: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-surface-light: #334155;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent: #ea580c;
+            --accent-hover: #c2410c;
+            --border-color: #334155;
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+
+        /* Reset e Base */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            min-height: 100dvh; /* Usa viewport dinamico per compensare le barre di Safari */
+            overflow-x: hidden;
+        }
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* Layout */
+        .container { max-width: 1000px; margin: 0 auto; width: 100%; padding: 0 1rem; }
+        header { background: var(--bg-surface); border-bottom: 1px solid var(--border-color); padding: 1rem 0; flex-shrink: 0; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+        .controls { display: flex; gap: 1rem; align-items: center; width: 100%; justify-content: space-between;}
+        @media (min-width: 768px) { .controls { width: auto; justify-content: flex-end; } }
+
+        /* Componenti Header */
+        h1 { font-size: 1.5rem; color: var(--accent); }
+        h1 span { color: white; }
+        .subtitle { font-size: 0.75rem; color: var(--text-muted); }
+        
+        .offset-box { background: var(--bg-base); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; display: flex; flex-direction: column; align-items: center; }
+        .offset-box label { font-size: 0.6rem; color: var(--text-muted); }
+        .offset-box input { background: transparent; border: none; color: white; text-align: center; font-size: 0.9rem; width: 60px; outline: none; }
+
+        .btn { padding: 0.5rem 1rem; border-radius: 6px; font-weight: bold; border: none; cursor: pointer; transition: background 0.2s; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;}
+        .btn-secondary { background: var(--bg-surface-light); color: var(--text-main); border: 1px solid var(--border-color); }
+        .btn-secondary:active { background: #475569; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:active { background: var(--accent-hover); transform: scale(0.98); }
+        .btn-icon-only { padding: 0.5rem 0.75rem; }
+
+        /* Area Inserimento - Resa STICKY in modo che resti sempre visibile quando si scorre in basso */
+        .input-section { 
+            position: sticky; 
+            top: 0; 
+            background: var(--bg-surface); 
+            border-bottom: 1px solid var(--border-color); 
+            padding: 1rem 0; 
+            z-index: 50; /* Supera tutto il resto quando scorre */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); 
+        }
+        .input-form { display: flex; gap: 0.5rem; width: 100%; }
+        
+        .bib-input { 
+            flex-grow: 1; 
+            min-width: 0; /* Impedisce il resize bug in flexbox */
+            background: var(--bg-base); 
+            border: 2px solid var(--accent); 
+            border-radius: 8px; 
+            padding: 0.75rem; 
+            font-size: 1.5rem; 
+            font-weight: bold; 
+            text-align: center; 
+            color: white; 
+            outline: none; 
+            transition: box-shadow 0.2s; 
+        }
+        .bib-input:focus { box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.3); }
+        .bib-input::placeholder { color: var(--bg-surface-light); font-size: 1rem; }
+        
+        .btn-submit { 
+            flex-shrink: 0; /* Impedisce al bottone di essere compresso fuori dal display */
+            padding: 0 1rem; 
+            font-size: 1rem; 
+            border-radius: 8px; 
+        }
+
+        /* Responsive Breakpoints per tablet/desktop */
+        @media (min-width: 768px) {
+            .bib-input { padding: 1rem; font-size: 2rem; }
+            .bib-input::placeholder { font-size: 1.2rem; }
+            .btn-submit { padding: 0 2rem; font-size: 1.2rem; }
+        }
+
+        #livePreview { height: 22px; text-align: center; margin-top: 6px; font-size: 1.1rem; font-weight: bold; letter-spacing: 0.02em; }
+        #feedbackMsg { height: 18px; text-align: center; margin-top: 4px; font-size: 0.8rem; font-weight: bold; opacity: 0; transition: opacity 0.3s; }
+
+        /* Main e Tabs */
+        main { flex-grow: 1; padding: 1rem 0 3rem 0; }
+        .tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .tab { padding: 0.5rem 1rem; background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; font-size: 0.875rem; font-weight: bold; }
+        .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* Classifica */
+        .ranking-header { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px 8px 0 0; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+        .ranking-header h2 { font-size: 1.1rem; color: var(--text-main); }
+        .lap-badge { background: var(--bg-surface-light); padding: 2px 8px; border-radius: 4px; color: white; font-weight: bold; }
+
+        .table-container { background: var(--bg-base); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 8px 8px; overflow-x: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; text-align: left; }
+        th { background: rgba(30, 41, 59, 0.5); color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; padding: 0.75rem; border-bottom: 1px solid var(--border-color); font-weight: 600; }
+        td { padding: 0.75rem; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+        tr:hover td { background: rgba(30, 41, 59, 0.3); }
+        
+        /* Stili Specifici Righe */
+        .row-leader { background: rgba(154, 52, 18, 0.1); border-left: 4px solid var(--accent); }
+        .row-leader td { border-bottom-color: rgba(234, 88, 12, 0.2); }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        
+        .pos { font-weight: bold; color: var(--text-muted); }
+        .row-leader .pos { color: var(--accent); }
+        .bib-badge { background: #020617; border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-size: 0.875rem; }
+        
+        .name-last { font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; }
+        .name-first { text-transform: capitalize; color: var(--text-muted); font-weight: normal; }
+        .start-time { font-size: 0.65rem; color: var(--text-muted); display: block; margin-top: 2px; }
+        
+        .time-net { font-size: 1.1rem; color: var(--text-main); }
+        .row-leader .time-net { color: #fba918; font-weight: bold; }
+        .gap { font-weight: 600; color: var(--text-main); }
+        .row-leader .gap { color: var(--text-muted); font-weight: normal; }
+        
+        .trend-up { color: var(--success); font-weight: bold; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+        .trend-down { color: var(--danger); font-weight: bold; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+        .trend-flat { color: var(--text-muted); display: flex; justify-content: flex-end; }
+        .icon { width: 16px; height: 16px; }
+
+        /* Animazioni Flash */
+        @keyframes flashOk { 0% { background: var(--success); color: white; } 100% { background: transparent; } }
+        @keyframes flashKo { 0% { background: var(--danger); color: white; } 100% { background: transparent; } }
+        .flash-ok { animation: flashOk 0.4s ease-out; }
+        .flash-ko { animation: flashKo 0.4s ease-out; }
+        .msg-ok { color: var(--success); opacity: 1 !important; }
+        .msg-ko { color: var(--danger); opacity: 1 !important; }
+
+        /* Custom Modal per il Reset */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: var(--bg-surface); padding: 2rem; border-radius: 12px;
+            border: 1px solid var(--border-color); max-width: 320px; width: 90%;
+            text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+            transform: translateY(20px); transition: transform 0.2s;
+        }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+        .modal-title { color: var(--danger); font-size: 1.25rem; font-weight: bold; margin-bottom: 0.5rem; }
+        .modal-text { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.9rem; line-height: 1.4; }
+        .modal-actions { display: flex; gap: 0.5rem; justify-content: center; }
+        .modal-actions .btn { flex: 1; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="container header-content">
+            <div>
+                <h1>Coach<span>Tracker</span></h1>
+                <div class="subtitle">Inserimento pettorali e distacchi (Offline)</div>
+            </div>
+            
+            <div class="controls">
+                
+                <div style="display: flex; gap: 0.5rem;">
+                    <!-- Bottone Reset Gara -->
+                    <button onclick="showResetModal()" class="btn btn-icon-only" style="background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3);" title="Azzera Gara">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+
+                    <!-- Bottone Esporta CSV -->
+                    <button onclick="exportCSV()" class="btn btn-icon-only" style="background: rgba(34, 197, 94, 0.1); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.3);" title="Esporta CSV Dati">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    </button>
+                </div>
+
+                <div class="offset-box">
+                    <label>OFFSET ORARIO (sec)</label>
+                    <input type="number" id="timeOffset" value="0" class="mono" onchange="updateOffset()">
+                </div>
+
+                <input type="file" id="jsonFileInput" accept=".json" style="display:none" onchange="importJSON(event)">
+                <button onclick="document.getElementById('jsonFileInput').click()" class="btn btn-secondary">
+                    📁 StartList
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <section class="input-section">
+        <div class="container">
+            <form id="bibForm" class="input-form" onsubmit="recordSplit(event)">
+                <input type="number" id="bibInput" class="bib-input mono" placeholder="Pettorale" autocomplete="off" inputmode="numeric" pattern="[0-9]*" autofocus>
+                <button type="submit" class="btn btn-primary btn-submit">INSERISCI</button>
+            </form>
+            <div id="livePreview"></div>
+            <div id="feedbackMsg"></div>
+        </div>
+    </section>
+
+    <main>
+        <div class="container">
+            <div id="categoryTabs" class="tabs">
+                <!-- Generati dinamicamente -->
+            </div>
+
+            <div class="ranking-header">
+                <h2 id="activeCatTitle">Nessuna categoria caricata</h2>
+                <div class="subtitle" style="color:var(--text-main)">Giro Selezionato: <span id="currentLapDisplay" class="lap-badge">1</span></div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-center" style="width: 60px;">Pos</th>
+                            <th class="text-center" style="width: 70px;">Pett</th>
+                            <th>Atleta</th>
+                            <th class="text-right">Tempo Netto</th>
+                            <th class="text-right">Distacco</th>
+                            <th class="text-right">Trend</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rankingTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding: 3rem; color: var(--text-muted);">In attesa di dati...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Reset HTML (da inserire prima del tag script) -->
+    <div id="resetModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title">⚠️ Attenzione</div>
+            <div class="modal-text">Vuoi azzerare l'app per una nuova gara? Tutti i dati e i passaggi registrati verranno eliminati definitivamente.</div>
+            <div class="modal-actions">
+                <button onclick="hideResetModal()" class="btn btn-secondary">Annulla</button>
+                <button onclick="executeReset()" class="btn" style="background: var(--danger); color: white;">Azzera Tutto</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let athletesMap = new Map(); 
+        let categoriesList = [];
+        let activeCategory = null;
+        let globalOffsetMs = 0; 
+        
+        const feedbackEl = document.getElementById('feedbackMsg');
+        const bibInput = document.getElementById('bibInput');
+        const livePreviewEl = document.getElementById('livePreview');
+
+        // SVG Icons per il trend integrati nel JS
+        const svgUp = `<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`;
+        const svgDown = `<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"></path></svg>`;
+
+        window.onload = () => {
+            const savedData = localStorage.getItem('coachTracker_athletes');
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    parsed.forEach(a => athletesMap.set(a.pettorale, a));
+                    extractCategories();
+                } catch(e) { console.error("Errore lettura cache"); }
+            }
+            bibInput.focus();
+        };
+
+        // --- GESTIONE PREVIEW IN TEMPO REALE ---
+        bibInput.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            
+            if (!val) {
+                livePreviewEl.innerHTML = '';
+                return;
+            }
+
+            const bib = parseInt(val);
+            const athlete = athletesMap.get(bib);
+            
+            if (athlete) {
+                // Atleta trovato: mostra Cognome (maiuscolo), Nome (Iniziale maiuscola) e Categoria
+                livePreviewEl.innerHTML = `
+                    <span style="color: #fff; text-transform: uppercase;">${athlete.cognome}</span> 
+                    <span style="color: #94a3b8; text-transform: capitalize;">${athlete.nome}</span> 
+                    <span style="color: var(--accent); font-size: 0.75rem; margin-left: 8px;">(${athlete.categoria})</span>
+                `;
+            } else {
+                // Nessun matching trovato
+                livePreviewEl.innerHTML = `<span style="color: var(--danger); font-size: 0.9rem; opacity: 0.8;">Pettorale non in StartList</span>`;
+            }
+        });
+
+        function updateOffset() {
+            const sec = parseInt(document.getElementById('timeOffset').value) || 0;
+            globalOffsetMs = sec * 1000;
+        }
+
+        function getTodayStartTimestamp(timeStr) {
+            const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+            const d = new Date();
+            d.setHours(hours, minutes, seconds, 0);
+            return d.getTime();
+        }
+
+        function formatTimeGap(ms) {
+            if (ms === 0) return "-";
+            const isNegative = ms < 0;
+            const absMs = Math.abs(ms);
+            
+            const minutes = Math.floor(absMs / 60000);
+            const seconds = Math.floor((absMs % 60000) / 1000);
+            const tenths = Math.floor((absMs % 1000) / 100);
+            
+            const sign = isNegative ? "-" : "+";
+            const minStr = minutes > 0 ? `${minutes}:` : "";
+            const secStr = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds;
+            return `${sign}${minStr}${secStr}.${tenths}`;
+        }
+
+        function formatNetTime(ms) {
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const tenths = Math.floor((ms % 1000) / 100);
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${tenths}`;
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    athletesMap.clear();
+                    
+                    for (const [categoryName, athletes] of Object.entries(importedData)) {
+                        athletes.forEach(a => {
+                            athletesMap.set(a.pettorale, {
+                                ...a,
+                                categoria: categoryName,
+                                laps: [] 
+                            });
+                        });
+                    }
+
+                    saveData();
+                    extractCategories();
+                    showFeedback("StartList importata con successo!", true);
+                    event.target.value = ''; 
+                } catch (error) {
+                    alert("Errore nella lettura del file JSON.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function extractCategories() {
+            const cats = new Set();
+            athletesMap.forEach(a => cats.add(a.categoria));
+            categoriesList = Array.from(cats).sort();
+            
+            if (categoriesList.length > 0) {
+                if (!activeCategory || !categoriesList.includes(activeCategory)) {
+                    activeCategory = categoriesList[0];
+                }
+                renderTabs();
+                renderRanking();
+            } else {
+                activeCategory = null;
+                renderTabs();
+                renderRanking();
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('coachTracker_athletes', JSON.stringify(Array.from(athletesMap.values())));
+        }
+
+        function recordSplit(event) {
+            event.preventDefault(); 
+            
+            const bib = parseInt(bibInput.value);
+            
+            // Pulisce l'input e la live preview immediatamente
+            bibInput.value = ''; 
+            livePreviewEl.innerHTML = '';
+            bibInput.focus();
+
+            if (isNaN(bib)) return;
+
+            const athlete = athletesMap.get(bib);
+            
+            if (!athlete) {
+                showFeedback(`PETTORALE ${bib} NON TROVATO!`, false);
+                return;
+            }
+
+            const currentOfficialTime = Date.now() + globalOffsetMs;
+            const startTimestamp = getTodayStartTimestamp(athlete.ora_partenza);
+            
+            if (currentOfficialTime < startTimestamp) {
+                showFeedback(`Il pettorale ${bib} non è ancora partito!`, false);
+                return;
+            }
+
+            const netTime = currentOfficialTime - startTimestamp;
+            
+            athlete.laps.push({ netTime: netTime, timestamp: currentOfficialTime });
+
+            saveData();
+            showFeedback(`Pettorale ${bib} Registrato (Giro ${athlete.laps.length})`, true);
+            
+            if (activeCategory !== athlete.categoria) {
+                activeCategory = athlete.categoria;
+                renderTabs();
+            }
+            renderRanking();
+        }
+
+        // --- GESTIONE ESPORTAZIONE CSV ---
+        function exportCSV() {
+            if (athletesMap.size === 0) {
+                showFeedback("Nessun dato da esportare", false);
+                return;
+            }
+
+            let globalMaxLap = 0;
+            athletesMap.forEach(a => {
+                if (a.laps && a.laps.length > globalMaxLap) {
+                    globalMaxLap = a.laps.length;
+                }
+            });
+
+            if (globalMaxLap === 0) {
+                showFeedback("Nessun intertempo registrato", false);
+                return;
+            }
+
+            let lapRanks = {};
+            categoriesList.forEach(cat => {
+                lapRanks[cat] = [];
+                let catAthletes = Array.from(athletesMap.values()).filter(a => a.categoria === cat);
+                
+                for (let i = 0; i < globalMaxLap; i++) {
+                    let lapData = catAthletes
+                        .filter(a => a.laps && a.laps.length > i)
+                        .map(a => ({ pettorale: a.pettorale, netTime: a.laps[i].netTime }))
+                        .sort((a, b) => a.netTime - b.netTime);
+
+                    let ranksForThisLap = {};
+                    lapData.forEach((data, index) => {
+                        ranksForThisLap[data.pettorale] = index + 1; 
+                    });
+                    lapRanks[cat].push(ranksForThisLap);
+                }
+            });
+
+            let headers = ["Categoria", "Pettorale", "Cognome", "Nome", "Ora_Partenza"];
+            for (let i = 1; i <= globalMaxLap; i++) {
+                headers.push(`Giro ${i} (Pos)`);
+            }
+            let csvContent = headers.join(",") + "\n";
+
+            let sortedAthletes = Array.from(athletesMap.values()).sort((a, b) => {
+                if (a.categoria === b.categoria) {
+                    return a.pettorale - b.pettorale;
+                }
+                return a.categoria.localeCompare(b.categoria);
+            });
+
+            sortedAthletes.forEach(a => {
+                let row = [
+                    `"${a.categoria}"`,
+                    a.pettorale,
+                    `"${a.cognome}"`,
+                    `"${a.nome}"`,
+                    `"${a.ora_partenza}"`
+                ];
+
+                for (let i = 0; i < globalMaxLap; i++) {
+                    if (a.laps && a.laps.length > i) {
+                        const tNetto = formatNetTime(a.laps[i].netTime);
+                        const posizione = lapRanks[a.categoria][i][a.pettorale];
+                        row.push(`"${tNetto} (${posizione}°)"`);
+                    } else {
+                        row.push('""'); 
+                    }
+                }
+
+                csvContent += row.join(",") + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+            link.setAttribute("download", `intertempi_${dateStr}_${timeStr}.csv`);
+            
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showFeedback("Esportazione CSV completata", true);
+        }
+
+        function showFeedback(msg, isSuccess) {
+            feedbackEl.innerText = msg;
+            feedbackEl.className = isSuccess ? 'msg-ok' : 'msg-ko';
+            bibInput.classList.add(isSuccess ? 'flash-ok' : 'flash-ko');
+            
+            setTimeout(() => {
+                feedbackEl.className = '';
+                bibInput.classList.remove('flash-ok', 'flash-ko');
+            }, 2000);
+        }
+
+        function switchCategory(catName) {
+            activeCategory = catName;
+            renderTabs();
+            renderRanking();
+        }
+
+        function showResetModal() {
+            bibInput.blur(); 
+            document.getElementById('resetModal').classList.add('active');
+        }
+
+        function hideResetModal() {
+            document.getElementById('resetModal').classList.remove('active');
+            bibInput.focus();
+        }
+
+        function executeReset() {
+            localStorage.removeItem('coachTracker_athletes');
+            athletesMap.clear();
+            livePreviewEl.innerHTML = '';
+            extractCategories(); 
+            hideResetModal();
+            showFeedback("App pronta per una nuova gara", true);
+        }
+
+        function renderTabs() {
+            const tabsContainer = document.getElementById('categoryTabs');
+            tabsContainer.innerHTML = categoriesList.map(cat => `
+                <button onclick="switchCategory('${cat}')" class="tab ${activeCategory === cat ? 'active' : ''}">
+                    ${cat}
+                </button>
+            `).join('');
+            document.getElementById('activeCatTitle').innerText = activeCategory || "Nessuna categoria";
+        }
+
+        function renderRanking() {
+            const tbody = document.getElementById('rankingTableBody');
+            
+            if (!activeCategory) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Nessuna categoria attiva</td></tr>';
+                return;
+            }
+
+            let categoryAthletes = Array.from(athletesMap.values()).filter(a => a.categoria === activeCategory);
+            
+            let maxLap = 0;
+            categoryAthletes.forEach(a => { if (a.laps.length > maxLap) maxLap = a.laps.length; });
+
+            if (maxLap === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Nessun passaggio registrato.</td></tr>';
+                document.getElementById('currentLapDisplay').innerText = "-";
+                return;
+            }
+
+            document.getElementById('currentLapDisplay').innerText = maxLap;
+
+            let rankedAthletes = [];
+            categoryAthletes.forEach(a => {
+                if (a.laps.length >= maxLap) {
+                    rankedAthletes.push({
+                        ...a,
+                        currentNet: a.laps[maxLap - 1].netTime,
+                        prevNet: maxLap > 1 ? a.laps[maxLap - 2].netTime : null
+                    });
+                }
+            });
+
+            rankedAthletes.sort((a, b) => a.currentNet - b.currentNet);
+            const leaderNet = rankedAthletes[0].currentNet;
+            
+            let prevLeaderNet = null;
+            if (maxLap > 1) {
+                prevLeaderNet = Math.min(...rankedAthletes.map(a => a.prevNet));
+            }
+
+            tbody.innerHTML = rankedAthletes.map((a, index) => {
+                const gapToLeader = a.currentNet - leaderNet;
+                
+                let trendHtml = `<span class="trend-flat">-</span>`;
+                if (maxLap > 1 && a.prevNet !== null && prevLeaderNet !== null) {
+                    const prevGapToLeader = a.prevNet - prevLeaderNet;
+                    const gapDifference = gapToLeader - prevGapToLeader; 
+                    
+                    if (gapDifference < -500) { 
+                        trendHtml = `<span class="trend-up">${svgUp} ${formatTimeGap(gapDifference)}</span>`;
+                    } else if (gapDifference > 500) { 
+                        trendHtml = `<span class="trend-down">${svgDown} ${formatTimeGap(gapDifference)}</span>`;
+                    } else {
+                        trendHtml = `<span class="trend-flat">=</span>`;
+                    }
+                }
+
+                const isLeader = index === 0;
+                const rowClass = isLeader ? 'row-leader' : '';
+                
+                return `
+                    <tr class="${rowClass}">
+                        <td class="text-center pos">${index + 1}</td>
+                        <td class="text-center"><span class="bib-badge mono">${a.pettorale}</span></td>
+                        <td>
+                            <span class="name-last">${a.cognome}</span> <span class="name-first">${a.nome}</span>
+                            <span class="start-time">Partenza: ${a.ora_partenza}</span>
+                        </td>
+                        <td class="text-right mono time-net">${formatNetTime(a.currentNet)}</td>
+                        <td class="text-right mono gap">${formatTimeGap(gapToLeader)}</td>
+                        <td class="mono">${trendHtml}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    </script>
+</body>
+</html>
