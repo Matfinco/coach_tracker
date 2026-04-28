@@ -80,10 +80,15 @@
         .tab { padding: 0.5rem 1rem; background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; font-size: 0.875rem; font-weight: bold; }
         .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
 
-        /* Classifica */
+        /* Classifica & Lap Selector */
         .ranking-header { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px 8px 0 0; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
         .ranking-header h2 { font-size: 1.1rem; color: var(--text-main); }
-        .lap-badge { background: var(--bg-surface-light); padding: 2px 8px; border-radius: 4px; color: white; font-weight: bold; }
+        
+        .lap-badge-container { display: flex; align-items: center; background: var(--bg-surface-light); border-radius: 6px; overflow: hidden; margin-left: 0.5rem; }
+        .lap-nav-btn { background: transparent; border: none; color: white; cursor: pointer; font-weight: bold; padding: 4px 10px; transition: background 0.2s, opacity 0.2s; font-size: 1rem; }
+        .lap-nav-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+        .lap-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .lap-display-text { padding: 4px 8px; color: white; font-weight: bold; min-width: 30px; text-align: center; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); }
 
         .table-container { background: var(--bg-base); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 8px 8px; overflow-x: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         table { width: 100%; border-collapse: collapse; min-width: 600px; text-align: left; }
@@ -186,10 +191,19 @@
     <main>
         <div class="container">
             <div id="categoryTabs" class="tabs"></div>
+            
             <div class="ranking-header">
                 <h2 id="activeCatTitle">Nessuna categoria caricata</h2>
-                <div class="subtitle" style="color:var(--text-main)">Giro Selezionato: <span id="currentLapDisplay" class="lap-badge">1</span></div>
+                <div class="subtitle" style="color:var(--text-main); display: flex; align-items: center;">
+                    Giro: 
+                    <div class="lap-badge-container">
+                        <button id="lapPrevBtn" class="lap-nav-btn" onclick="changeLapView(-1)">&lt;</button>
+                        <span id="currentLapDisplay" class="lap-display-text">-</span>
+                        <button id="lapNextBtn" class="lap-nav-btn" onclick="changeLapView(1)">&gt;</button>
+                    </div>
+                </div>
             </div>
+
             <div class="table-container">
                 <table>
                     <thead>
@@ -269,6 +283,9 @@
         let activeCategory = null;
         let globalOffsetMs = 0; 
         
+        // Nuova variabile di stato per gestire la visualizzazione del giro
+        let selectedLapView = null; 
+
         const feedbackEl = document.getElementById('feedbackMsg');
         const bibInput = document.getElementById('bibInput');
         const livePreviewEl = document.getElementById('livePreview');
@@ -288,7 +305,6 @@
             bibInput.focus();
         };
 
-        // --- GESTIONE MANUALE STARTLIST ---
         function showManualEntryModal() {
             bibInput.blur();
             document.getElementById('manualEntryModal').classList.add('active');
@@ -312,19 +328,12 @@
             const yearStr = document.getElementById('manYear').value;
             const year = yearStr ? parseInt(yearStr) : 0;
 
-            if (!last && !first) {
-                last = "ATLETA"; // Se omessi, inserisce un placeholder per non spaccare l'interfaccia
-            }
+            if (!last && !first) { last = "ATLETA"; }
 
-            // Formattazione sicura dell'ora (es. se scrivono 9:30:00 -> 09:30:00)
             const timeParts = time.split(':');
             const safeTime = `${timeParts[0].padStart(2, '0')}:${timeParts[1]}:${timeParts[2]}`;
 
-            // Controllo sovrascrittura
             let isUpdate = athletesMap.has(bib);
-
-            // Creazione oggetto Atleta
-            // Se esiste già, manteniamo i laps registrati finora, altrimenti array vuoto
             const existingLaps = isUpdate ? athletesMap.get(bib).laps : [];
             
             athletesMap.set(bib, {
@@ -340,21 +349,17 @@
             saveData();
             extractCategories();
 
-            // Feedback visivo nel modal
             const fbk = document.getElementById('manFeedback');
             fbk.innerText = isUpdate ? `Pettorale ${bib} aggiornato!` : `Pettorale ${bib} inserito!`;
             fbk.style.opacity = 1;
             setTimeout(() => fbk.style.opacity = 0, 2000);
 
-            // Pulizia selettiva per Data Entry rapido
-            // Svuotiamo Pettorale, Cognome e Nome, ma lasciamo Categoria e Ora
             document.getElementById('manBib').value = '';
             document.getElementById('manLast').value = '';
             document.getElementById('manFirst').value = '';
             document.getElementById('manBib').focus();
         }
 
-        // --- PREVIEW E CRONOMETRAGGIO ---
         bibInput.addEventListener('input', (e) => {
             const val = e.target.value.trim();
             if (!val) { livePreviewEl.innerHTML = ''; return; }
@@ -426,6 +431,8 @@
             athletesMap.forEach(a => cats.add(a.categoria));
             categoriesList = Array.from(cats).sort();
             
+            selectedLapView = null; // Reset visuale giro
+
             if (categoriesList.length > 0) {
                 if (!activeCategory || !categoriesList.includes(activeCategory)) {
                     activeCategory = categoriesList[0];
@@ -468,6 +475,10 @@
 
             const netTime = currentOfficialTime - startTimestamp;
             athlete.laps.push({ netTime: netTime, timestamp: currentOfficialTime });
+            
+            // Forza la visuale sull'ultimo giro inserito
+            selectedLapView = null;
+
             saveData();
             showFeedback(`Pettorale ${bib} Registrato (Giro ${athlete.laps.length})`, true);
             
@@ -496,9 +507,15 @@
                 }
             });
 
+            // Usiamo il punto e virgola come separatore per Excel Italiano
             let headers = ["Categoria", "Pettorale", "Cognome", "Nome", "Ora_Partenza"];
-            for (let i = 1; i <= globalMaxLap; i++) { headers.push(`Giro ${i} (Pos)`); }
-            let csvContent = headers.join(",") + "\n";
+            for (let i = 1; i <= globalMaxLap; i++) { 
+                headers.push(`Giro ${i}`);
+                headers.push(`Pos ${i}`);
+            }
+            
+            // Aggiungiamo il BOM (Byte Order Mark) per forzare Excel a leggere il file in UTF-8 senza corrompere i caratteri
+            let csvContent = "\uFEFF" + headers.join(";") + "\n";
 
             let sortedAthletes = Array.from(athletesMap.values()).sort((a, b) => {
                 if (a.categoria === b.categoria) { return a.pettorale - b.pettorale; }
@@ -511,10 +528,16 @@
                     if (a.laps && a.laps.length > i) {
                         const tNetto = formatNetTime(a.laps[i].netTime);
                         const posizione = lapRanks[a.categoria][i][a.pettorale];
-                        row.push(`"${tNetto} (${posizione}°)"`);
-                    } else { row.push('""'); }
+                        
+                        // Inseriamo il tempo e la posizione su due celle distinte
+                        row.push(`"${tNetto}"`); 
+                        row.push(posizione);
+                    } else { 
+                        row.push('""'); 
+                        row.push('""'); 
+                    }
                 }
-                csvContent += row.join(",") + "\n";
+                csvContent += row.join(";") + "\n";
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -539,7 +562,34 @@
             setTimeout(() => { feedbackEl.className = ''; bibInput.classList.remove('flash-ok', 'flash-ko'); }, 2000);
         }
 
-        function switchCategory(catName) { activeCategory = catName; renderTabs(); renderRanking(); }
+        function switchCategory(catName) { 
+            activeCategory = catName; 
+            selectedLapView = null; // Resetta il giro quando si cambia categoria
+            renderTabs(); 
+            renderRanking(); 
+        }
+
+        function changeLapView(delta) {
+            if (!activeCategory) return;
+            
+            let categoryAthletes = Array.from(athletesMap.values()).filter(a => a.categoria === activeCategory);
+            let maxLap = 0;
+            categoryAthletes.forEach(a => { if (a.laps.length > maxLap) maxLap = a.laps.length; });
+            
+            if (maxLap === 0) return;
+            
+            if (selectedLapView === null) {
+                selectedLapView = maxLap;
+            }
+            
+            selectedLapView += delta;
+            
+            // Limiti di scorrimento
+            if (selectedLapView < 1) selectedLapView = 1;
+            if (selectedLapView > maxLap) selectedLapView = maxLap;
+            
+            renderRanking();
+        }
 
         function showResetModal() { bibInput.blur(); document.getElementById('resetModal').classList.add('active'); }
         function hideResetModal() { document.getElementById('resetModal').classList.remove('active'); bibInput.focus(); }
@@ -548,6 +598,7 @@
             localStorage.removeItem('coachTracker_athletes');
             athletesMap.clear();
             livePreviewEl.innerHTML = '';
+            selectedLapView = null;
             extractCategories(); 
             hideResetModal();
             showFeedback("App pronta per una nuova gara", true);
@@ -561,7 +612,17 @@
 
         function renderRanking() {
             const tbody = document.getElementById('rankingTableBody');
-            if (!activeCategory) { tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Nessuna categoria attiva</td></tr>'; return; }
+            const lapDisplay = document.getElementById('currentLapDisplay');
+            const prevBtn = document.getElementById('lapPrevBtn');
+            const nextBtn = document.getElementById('lapNextBtn');
+
+            if (!activeCategory) { 
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Nessuna categoria attiva</td></tr>'; 
+                lapDisplay.innerText = "-";
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+                return; 
+            }
 
             let categoryAthletes = Array.from(athletesMap.values()).filter(a => a.categoria === activeCategory);
             let maxLap = 0;
@@ -569,33 +630,52 @@
 
             if (maxLap === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">Nessun passaggio registrato.</td></tr>';
-                document.getElementById('currentLapDisplay').innerText = "-";
+                lapDisplay.innerText = "-";
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
                 return;
             }
 
-            document.getElementById('currentLapDisplay').innerText = maxLap;
+            // Logica di gestione visualizzazione giro
+            if (selectedLapView === null || selectedLapView > maxLap) {
+                selectedLapView = maxLap;
+            }
+
+            lapDisplay.innerText = `${selectedLapView} / ${maxLap}`;
+            prevBtn.disabled = (selectedLapView <= 1);
+            nextBtn.disabled = (selectedLapView >= maxLap);
+
+            // Filtra solo gli atleti che sono arrivati ALMENO al giro selezionato
             let rankedAthletes = [];
             categoryAthletes.forEach(a => {
-                if (a.laps.length >= maxLap) {
-                    rankedAthletes.push({ ...a, currentNet: a.laps[maxLap - 1].netTime, prevNet: maxLap > 1 ? a.laps[maxLap - 2].netTime : null });
+                if (a.laps.length >= selectedLapView) {
+                    rankedAthletes.push({ 
+                        ...a, 
+                        currentNet: a.laps[selectedLapView - 1].netTime, 
+                        prevNet: selectedLapView > 1 ? a.laps[selectedLapView - 2].netTime : null 
+                    });
                 }
             });
 
             rankedAthletes.sort((a, b) => a.currentNet - b.currentNet);
             const leaderNet = rankedAthletes[0].currentNet;
             let prevLeaderNet = null;
-            if (maxLap > 1) { prevLeaderNet = Math.min(...rankedAthletes.map(a => a.prevNet)); }
+            if (selectedLapView > 1) { 
+                prevLeaderNet = Math.min(...rankedAthletes.map(a => a.prevNet)); 
+            }
 
             tbody.innerHTML = rankedAthletes.map((a, index) => {
                 const gapToLeader = a.currentNet - leaderNet;
                 let trendHtml = `<span class="trend-flat">-</span>`;
-                if (maxLap > 1 && a.prevNet !== null && prevLeaderNet !== null) {
+                
+                if (selectedLapView > 1 && a.prevNet !== null && prevLeaderNet !== null) {
                     const prevGapToLeader = a.prevNet - prevLeaderNet;
                     const gapDifference = gapToLeader - prevGapToLeader; 
                     if (gapDifference < -500) { trendHtml = `<span class="trend-up">${svgUp} ${formatTimeGap(gapDifference)}</span>`; } 
                     else if (gapDifference > 500) { trendHtml = `<span class="trend-down">${svgDown} ${formatTimeGap(gapDifference)}</span>`; } 
                     else { trendHtml = `<span class="trend-flat">=</span>`; }
                 }
+
                 const isLeader = index === 0;
                 const rowClass = isLeader ? 'row-leader' : '';
                 return `
